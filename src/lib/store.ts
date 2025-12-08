@@ -191,6 +191,7 @@ const DEFAULT_SETTINGS: Settings = {
   anthropic_api_key: null,
   newsapi_key: null,
   proxycurl_api_key: null,
+  twitter_bearer_token: null,
   default_contact_frequency_days: 90,
   high_priority_frequency_days: 30,
   medium_priority_frequency_days: 60,

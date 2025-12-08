@@ -1,11 +1,10 @@
 "use client"
 
-import { useEffect, useState, use } from "react"
+import { useEffect, useState, useCallback, use } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import {
   ArrowLeft,
-  ExternalLink,
   Copy,
   Check,
   RefreshCw,
@@ -15,16 +14,20 @@ import {
   MapPin,
   Briefcase,
   Users,
-  PlusCircle,
-  Newspaper,
-  Linkedin,
   Send,
+  Edit2,
+  Twitter,
+  Linkedin,
+  Globe,
+  Building,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Textarea } from "@/components/ui/textarea"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -35,15 +38,25 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import {
   getContact,
   getResearchItems,
   getInteractions,
   createInteraction,
-  createResearchItem,
   updateContact,
-} from "@/lib/store"
-import { Contact, ResearchItem, Interaction } from "@/lib/types"
+  updateInteraction,
+  deleteInteraction,
+} from "@/lib/database"
+import { Contact, ResearchItem, Interaction, InteractionType, InteractionChannel } from "@/lib/types"
 import { formatDate, daysSince, getInitials, getPriorityColor } from "@/lib/utils"
+import { InteractionTimeline } from "@/components/interaction-timeline"
+import { ResearchPanel } from "@/components/research-panel"
 
 interface GeneratedMessage {
   subject: string
@@ -59,28 +72,38 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
   const [interactions, setInteractions] = useState<Interaction[]>([])
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
-  const [fetchingNews, setFetchingNews] = useState(false)
-  const [fetchingLinkedIn, setFetchingLinkedIn] = useState(false)
   const [generatedMessage, setGeneratedMessage] = useState<GeneratedMessage | null>(null)
   const [editedMessage, setEditedMessage] = useState("")
   const [copied, setCopied] = useState(false)
   const [messageType, setMessageType] = useState<string>("check_in")
-  const [newNote, setNewNote] = useState("")
+  const [showEditContact, setShowEditContact] = useState(false)
+  const [editForm, setEditForm] = useState<Partial<Contact>>({})
 
-  useEffect(() => {
-    const loadData = () => {
-      const contactData = getContact(resolvedParams.id)
+  const loadData = useCallback(async () => {
+    try {
+      const [contactData, researchData, interactionsData] = await Promise.all([
+        getContact(resolvedParams.id),
+        getResearchItems(resolvedParams.id),
+        getInteractions(resolvedParams.id),
+      ])
+
       if (!contactData) {
         router.push("/contacts")
         return
       }
+
       setContact(contactData)
-      setResearch(getResearchItems(resolvedParams.id))
-      setInteractions(getInteractions(resolvedParams.id))
+      setResearch(researchData)
+      setInteractions(interactionsData)
+      setEditForm(contactData)
+    } finally {
       setLoading(false)
     }
-    loadData()
   }, [resolvedParams.id, router])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   const generateMessage = async () => {
     if (!contact) return
@@ -111,116 +134,75 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
     }
   }
 
-  const fetchNews = async () => {
-    if (!contact) return
-
-    setFetchingNews(true)
-    try {
-      // Build search query from contact info
-      const searchTerms = [contact.name]
-      if (contact.associations && contact.associations.length > 0) {
-        searchTerms.push(...contact.associations.slice(0, 2))
-      }
-
-      const response = await fetch("/api/research/news", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query: searchTerms.join(", "),
-          contactId: contact.id,
-        }),
-      })
-
-      const result = await response.json()
-
-      if (result.success && result.data?.articles) {
-        // Save research items to local storage
-        result.data.articles.forEach((article: Omit<ResearchItem, "id" | "created_at">) => {
-          createResearchItem(article)
-        })
-        // Refresh research list
-        setResearch(getResearchItems(contact.id))
-      }
-    } catch (error) {
-      console.error("News fetch failed:", error)
-    } finally {
-      setFetchingNews(false)
-    }
-  }
-
-  const fetchLinkedIn = async () => {
-    if (!contact?.linkedin_url) return
-
-    setFetchingLinkedIn(true)
-    try {
-      const response = await fetch("/api/research/linkedin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          linkedinUrl: contact.linkedin_url,
-          contactId: contact.id,
-        }),
-      })
-
-      const result = await response.json()
-
-      if (result.success && result.data?.research_items) {
-        result.data.research_items.forEach((item: Omit<ResearchItem, "id" | "created_at">) => {
-          createResearchItem(item)
-        })
-        setResearch(getResearchItems(contact.id))
-      }
-    } catch (error) {
-      console.error("LinkedIn fetch failed:", error)
-    } finally {
-      setFetchingLinkedIn(false)
-    }
-  }
-
   const copyToClipboard = async () => {
     await navigator.clipboard.writeText(editedMessage)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const logOutreach = () => {
+  const logOutreach = async () => {
     if (!contact) return
 
-    createInteraction({
+    await createInteraction({
       contact_id: contact.id,
-      type: "outreach",
-      channel: "email",
+      type: "outreach" as InteractionType,
+      channel: "email" as InteractionChannel,
+      subject: generatedMessage?.subject || null,
       content: editedMessage,
       outcome: null,
+      follow_up_needed: false,
+      follow_up_date: null,
       sentiment: null,
+      tags: [],
+      attachments: [],
       occurred_at: new Date().toISOString(),
     })
 
-    updateContact(contact.id, {
+    await updateContact(contact.id, {
       last_contacted_at: new Date().toISOString(),
     })
 
-    setInteractions(getInteractions(contact.id))
-    setContact(getContact(contact.id) || contact)
+    await loadData()
     setGeneratedMessage(null)
     setEditedMessage("")
   }
 
-  const addNote = () => {
-    if (!contact || !newNote.trim()) return
+  const handleAddInteraction = async (interaction: Omit<Interaction, "id" | "created_at">) => {
+    await createInteraction(interaction)
+    const updatedInteractions = await getInteractions(resolvedParams.id)
+    setInteractions(updatedInteractions)
 
-    createInteraction({
-      contact_id: contact.id,
-      type: "note",
-      channel: "other",
-      content: newNote,
-      outcome: null,
-      sentiment: null,
-      occurred_at: new Date().toISOString(),
-    })
+    // Refresh contact to get updated last_contacted_at
+    const updatedContact = await getContact(resolvedParams.id)
+    if (updatedContact) setContact(updatedContact)
+  }
 
-    setInteractions(getInteractions(contact.id))
-    setNewNote("")
+  const handleEditInteraction = async (id: string, updates: Partial<Interaction>) => {
+    await updateInteraction(id, updates)
+    const updatedInteractions = await getInteractions(resolvedParams.id)
+    setInteractions(updatedInteractions)
+  }
+
+  const handleDeleteInteraction = async (id: string) => {
+    await deleteInteraction(id)
+    const updatedInteractions = await getInteractions(resolvedParams.id)
+    setInteractions(updatedInteractions)
+  }
+
+  const handleResearchUpdate = async () => {
+    const updatedResearch = await getResearchItems(resolvedParams.id)
+    setResearch(updatedResearch)
+  }
+
+  const handleSaveContact = async () => {
+    if (!contact) return
+    await updateContact(contact.id, editForm)
+    const updated = await getContact(contact.id)
+    if (updated) {
+      setContact(updated)
+      setEditForm(updated)
+    }
+    setShowEditContact(false)
   }
 
   if (loading || !contact) {
@@ -232,14 +214,144 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center justify-between">
         <Link href="/contacts">
           <Button variant="ghost" size="sm">
             <ArrowLeft className="h-4 w-4 mr-1" />
             Back
           </Button>
         </Link>
+        <Button variant="outline" size="sm" onClick={() => setShowEditContact(true)}>
+          <Edit2 className="h-4 w-4 mr-1" />
+          Edit Contact
+        </Button>
       </div>
+
+      {/* Edit Contact Dialog */}
+      <Dialog open={showEditContact} onOpenChange={setShowEditContact}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Contact</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Name</Label>
+                <Input
+                  value={editForm.name || ""}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input
+                  type="email"
+                  value={editForm.email || ""}
+                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Company</Label>
+                <Input
+                  value={editForm.company || ""}
+                  onChange={(e) => setEditForm({ ...editForm, company: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Job Title</Label>
+                <Input
+                  value={editForm.job_title || ""}
+                  onChange={(e) => setEditForm({ ...editForm, job_title: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Location</Label>
+              <Input
+                value={editForm.location || ""}
+                onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
+              />
+            </div>
+
+            <Separator />
+
+            <div className="space-y-2">
+              <Label>LinkedIn URL</Label>
+              <Input
+                placeholder="https://linkedin.com/in/..."
+                value={editForm.linkedin_url || ""}
+                onChange={(e) => setEditForm({ ...editForm, linkedin_url: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Twitter Handle</Label>
+              <Input
+                placeholder="@username"
+                value={editForm.twitter_handle || ""}
+                onChange={(e) => setEditForm({ ...editForm, twitter_handle: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Website URL</Label>
+              <Input
+                placeholder="https://..."
+                value={editForm.website_url || ""}
+                onChange={(e) => setEditForm({ ...editForm, website_url: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>RSS Feed URL</Label>
+              <Input
+                placeholder="https://blog.example.com/feed"
+                value={editForm.rss_feed_url || ""}
+                onChange={(e) => setEditForm({ ...editForm, rss_feed_url: e.target.value })}
+              />
+            </div>
+
+            <Separator />
+
+            <div className="space-y-2">
+              <Label>Communication Style</Label>
+              <Textarea
+                value={editForm.communication_style || ""}
+                onChange={(e) => setEditForm({ ...editForm, communication_style: e.target.value })}
+                rows={2}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Notes</Label>
+              <Textarea
+                value={editForm.notes || ""}
+                onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                rows={3}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Next Steps</Label>
+              <Textarea
+                value={editForm.next_steps || ""}
+                onChange={(e) => setEditForm({ ...editForm, next_steps: e.target.value })}
+                rows={2}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditContact(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveContact}>Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Left Column - Contact Info */}
@@ -253,6 +365,13 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
                   </Avatar>
                   <div>
                     <CardTitle className="text-xl">{contact.name}</CardTitle>
+                    {(contact.job_title || contact.company) && (
+                      <p className="text-sm text-muted-foreground">
+                        {contact.job_title}
+                        {contact.job_title && contact.company && " at "}
+                        {contact.company}
+                      </p>
+                    )}
                     <div className="flex items-center gap-2 mt-1">
                       {contact.priority && (
                         <Badge variant="outline" className={getPriorityColor(contact.priority)}>
@@ -264,6 +383,11 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
                     </div>
                   </div>
                 </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Social Links */}
+              <div className="flex flex-wrap gap-2">
                 {contact.linkedin_url && (
                   <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer">
                     <Button variant="outline" size="sm">
@@ -271,9 +395,26 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
                     </Button>
                   </a>
                 )}
+                {contact.twitter_handle && (
+                  <a
+                    href={`https://twitter.com/${contact.twitter_handle.replace("@", "")}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Button variant="outline" size="sm">
+                      <Twitter className="h-4 w-4" />
+                    </Button>
+                  </a>
+                )}
+                {contact.website_url && (
+                  <a href={contact.website_url} target="_blank" rel="noopener noreferrer">
+                    <Button variant="outline" size="sm">
+                      <Globe className="h-4 w-4" />
+                    </Button>
+                  </a>
+                )}
               </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
+
               {contact.location && (
                 <div className="flex items-center gap-2 text-sm">
                   <MapPin className="h-4 w-4 text-muted-foreground" />
@@ -281,11 +422,22 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               )}
 
+              {contact.company && (
+                <div className="flex items-center gap-2 text-sm">
+                  <Building className="h-4 w-4 text-muted-foreground" />
+                  {contact.company}
+                </div>
+              )}
+
               <div className="flex items-center gap-2 text-sm">
                 <Clock className="h-4 w-4 text-muted-foreground" />
                 {days !== null ? (
-                  <span className={days > 90 ? "text-orange-500" : ""}>
-                    Last contact: {days} days ago ({formatDate(contact.last_contacted_at)})
+                  <span className={days > 90 ? "text-orange-500 font-medium" : ""}>
+                    {days === 0
+                      ? "Contacted today"
+                      : days === 1
+                        ? "Contacted yesterday"
+                        : `${days} days since contact`}
                   </span>
                 ) : (
                   <span className="text-muted-foreground">Never contacted</span>
@@ -337,7 +489,7 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
               {contact.notes && (
                 <div>
                   <p className="text-sm font-medium mb-1">Notes</p>
-                  <p className="text-sm text-muted-foreground">{contact.notes}</p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{contact.notes}</p>
                 </div>
               )}
 
@@ -357,40 +509,12 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
             </CardContent>
           </Card>
 
-          {/* Quick Actions */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Quick Actions</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Button
-                onClick={fetchNews}
-                disabled={fetchingNews}
-                variant="outline"
-                className="w-full justify-start"
-              >
-                {fetchingNews ? (
-                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Newspaper className="mr-2 h-4 w-4" />
-                )}
-                Fetch News
-              </Button>
-              <Button
-                onClick={fetchLinkedIn}
-                disabled={fetchingLinkedIn || !contact.linkedin_url}
-                variant="outline"
-                className="w-full justify-start"
-              >
-                {fetchingLinkedIn ? (
-                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Linkedin className="mr-2 h-4 w-4" />
-                )}
-                Check LinkedIn
-              </Button>
-            </CardContent>
-          </Card>
+          {/* Research Panel */}
+          <ResearchPanel
+            contact={contact}
+            research={research}
+            onResearchUpdate={handleResearchUpdate}
+          />
         </div>
 
         {/* Right Column - Message & History */}
@@ -487,120 +611,17 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
             )}
           </Card>
 
-          {/* Research & History Tabs */}
+          {/* Interaction Timeline */}
           <Card>
-            <Tabs defaultValue="research">
-              <CardHeader>
-                <TabsList>
-                  <TabsTrigger value="research">
-                    Research ({research.length})
-                  </TabsTrigger>
-                  <TabsTrigger value="history">
-                    History ({interactions.length})
-                  </TabsTrigger>
-                </TabsList>
-              </CardHeader>
-
-              <TabsContent value="research">
-                <CardContent>
-                  {research.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <Newspaper className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <p>No research yet. Click "Fetch News" to find updates about this contact.</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {research.map((item) => (
-                        <div key={item.id} className="border-b pb-4 last:border-0">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <Badge variant="outline">{item.source}</Badge>
-                                {item.source_name && (
-                                  <span className="text-xs text-muted-foreground">
-                                    {item.source_name}
-                                  </span>
-                                )}
-                                {item.importance_score && item.importance_score >= 8 && (
-                                  <Badge variant="destructive" className="text-xs">
-                                    Important
-                                  </Badge>
-                                )}
-                              </div>
-                              <p className="font-medium">{item.title}</p>
-                              {item.summary && (
-                                <p className="text-sm text-muted-foreground mt-1">
-                                  {item.summary}
-                                </p>
-                              )}
-                              <p className="text-xs text-muted-foreground mt-2">
-                                {formatDate(item.fetched_at)}
-                              </p>
-                            </div>
-                            {item.url && (
-                              <a href={item.url} target="_blank" rel="noopener noreferrer">
-                                <Button variant="ghost" size="sm">
-                                  <ExternalLink className="h-4 w-4" />
-                                </Button>
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </TabsContent>
-
-              <TabsContent value="history">
-                <CardContent>
-                  {/* Add note form */}
-                  <div className="flex gap-2 mb-4">
-                    <Textarea
-                      placeholder="Add a note..."
-                      value={newNote}
-                      onChange={(e) => setNewNote(e.target.value)}
-                      rows={2}
-                      className="flex-1"
-                    />
-                    <Button onClick={addNote} disabled={!newNote.trim()}>
-                      <PlusCircle className="h-4 w-4" />
-                    </Button>
-                  </div>
-
-                  {interactions.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <p>No interaction history yet.</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {interactions.map((item) => (
-                        <div key={item.id} className="border-b pb-4 last:border-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Badge variant="outline">{item.type}</Badge>
-                            <Badge variant="secondary">{item.channel}</Badge>
-                            <span className="text-xs text-muted-foreground">
-                              {formatDate(item.occurred_at)}
-                            </span>
-                          </div>
-                          {item.content && (
-                            <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                              {item.content}
-                            </p>
-                          )}
-                          {item.outcome && (
-                            <p className="text-sm mt-1">
-                              <span className="font-medium">Outcome:</span> {item.outcome}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </TabsContent>
-            </Tabs>
+            <CardContent className="pt-6">
+              <InteractionTimeline
+                interactions={interactions}
+                onAdd={handleAddInteraction}
+                onEdit={handleEditInteraction}
+                onDelete={handleDeleteInteraction}
+                contactId={contact.id}
+              />
+            </CardContent>
           </Card>
         </div>
       </div>
