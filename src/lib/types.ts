@@ -113,16 +113,32 @@ export interface MessageDraft {
   created_at: string
 }
 
+// Your profile - used to personalize all generated messages
+export interface UserProfile {
+  name: string
+  role: string | null // "Founder at X", "Product Manager", etc.
+  communication_style: string | null // "casual and friendly", "professional but warm", etc.
+  about: string | null // Brief background that might be relevant
+  signature: string | null // How you sign off emails
+  sample_messages: string[] // Examples of YOUR writing style for Claude to learn from
+  avoid_phrases: string[] // Phrases you never use or want to avoid
+  preferred_openers: string[] // Ways you like to start messages
+}
+
 export interface Settings {
   id: string
+  // API Keys
   anthropic_api_key: string | null
   newsapi_key: string | null
   proxycurl_api_key: string | null
   twitter_bearer_token: string | null
+  // Contact frequency defaults
   default_contact_frequency_days: number
   high_priority_frequency_days: number
   medium_priority_frequency_days: number
   low_priority_frequency_days: number
+  // User profile for personalization
+  user_profile: UserProfile | null
   updated_at: string
 }
 

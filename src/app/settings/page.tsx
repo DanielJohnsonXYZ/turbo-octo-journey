@@ -1,19 +1,35 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Save, Key, Clock, Trash2, AlertCircle } from "lucide-react"
+import { Save, Key, Clock, Trash2, AlertCircle, User, MessageSquare, Plus, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { Separator } from "@/components/ui/separator"
+import { Badge } from "@/components/ui/badge"
 import { getSettings, updateSettings, clearAllData } from "@/lib/store"
-import { Settings } from "@/lib/types"
+import { Settings, UserProfile } from "@/lib/types"
+
+const DEFAULT_USER_PROFILE: UserProfile = {
+  name: "",
+  role: null,
+  communication_style: null,
+  about: null,
+  signature: null,
+  sample_messages: [],
+  avoid_phrases: [],
+  preferred_openers: [],
+}
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [saved, setSaved] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
+  const [newSampleMessage, setNewSampleMessage] = useState("")
+  const [newAvoidPhrase, setNewAvoidPhrase] = useState("")
+  const [newOpener, setNewOpener] = useState("")
 
   useEffect(() => {
     setSettings(getSettings())
@@ -31,18 +47,257 @@ export default function SettingsPage() {
     window.location.reload()
   }
 
+  const updateProfile = (updates: Partial<UserProfile>) => {
+    if (!settings) return
+    setSettings({
+      ...settings,
+      user_profile: {
+        ...(settings.user_profile || DEFAULT_USER_PROFILE),
+        ...updates,
+      },
+    })
+  }
+
+  const addSampleMessage = () => {
+    if (!newSampleMessage.trim()) return
+    const profile = settings?.user_profile || DEFAULT_USER_PROFILE
+    updateProfile({
+      sample_messages: [...profile.sample_messages, newSampleMessage.trim()],
+    })
+    setNewSampleMessage("")
+  }
+
+  const removeSampleMessage = (index: number) => {
+    const profile = settings?.user_profile || DEFAULT_USER_PROFILE
+    updateProfile({
+      sample_messages: profile.sample_messages.filter((_, i) => i !== index),
+    })
+  }
+
+  const addAvoidPhrase = () => {
+    if (!newAvoidPhrase.trim()) return
+    const profile = settings?.user_profile || DEFAULT_USER_PROFILE
+    updateProfile({
+      avoid_phrases: [...profile.avoid_phrases, newAvoidPhrase.trim()],
+    })
+    setNewAvoidPhrase("")
+  }
+
+  const removeAvoidPhrase = (index: number) => {
+    const profile = settings?.user_profile || DEFAULT_USER_PROFILE
+    updateProfile({
+      avoid_phrases: profile.avoid_phrases.filter((_, i) => i !== index),
+    })
+  }
+
+  const addOpener = () => {
+    if (!newOpener.trim()) return
+    const profile = settings?.user_profile || DEFAULT_USER_PROFILE
+    updateProfile({
+      preferred_openers: [...profile.preferred_openers, newOpener.trim()],
+    })
+    setNewOpener("")
+  }
+
+  const removeOpener = (index: number) => {
+    const profile = settings?.user_profile || DEFAULT_USER_PROFILE
+    updateProfile({
+      preferred_openers: profile.preferred_openers.filter((_, i) => i !== index),
+    })
+  }
+
   if (!settings) {
     return <div>Loading...</div>
   }
+
+  const profile = settings.user_profile || DEFAULT_USER_PROFILE
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Settings</h1>
         <p className="text-muted-foreground">
-          Configure your API keys and preferences
+          Configure your profile, API keys, and preferences
         </p>
       </div>
+
+      {/* Your Profile - Most Important for Natural Messages */}
+      <Card className="border-primary/50">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <User className="h-5 w-5" />
+            Your Profile
+          </CardTitle>
+          <CardDescription>
+            This information helps AI generate messages that sound like YOU. The more detail you provide,
+            the more natural your messages will feel.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="profile-name">Your Name *</Label>
+              <Input
+                id="profile-name"
+                placeholder="John Smith"
+                value={profile.name}
+                onChange={(e) => updateProfile({ name: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="profile-role">Your Role/Title</Label>
+              <Input
+                id="profile-role"
+                placeholder="Founder at Acme, Product Manager, etc."
+                value={profile.role || ""}
+                onChange={(e) => updateProfile({ role: e.target.value || null })}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="profile-style">Your Communication Style</Label>
+            <Input
+              id="profile-style"
+              placeholder="e.g., casual and friendly, professional but warm, direct and concise"
+              value={profile.communication_style || ""}
+              onChange={(e) => updateProfile({ communication_style: e.target.value || null })}
+            />
+            <p className="text-xs text-muted-foreground">
+              Describe how you naturally write messages
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="profile-about">About You (Background)</Label>
+            <Textarea
+              id="profile-about"
+              placeholder="Brief background that might be relevant to your contacts - what you're working on, interests, etc."
+              value={profile.about || ""}
+              onChange={(e) => updateProfile({ about: e.target.value || null })}
+              rows={3}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="profile-signature">Email Signature</Label>
+            <Input
+              id="profile-signature"
+              placeholder="Best, John"
+              value={profile.signature || ""}
+              onChange={(e) => updateProfile({ signature: e.target.value || null })}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Sample Messages - Critical for Voice Matching */}
+      <Card className="border-primary/50">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            Sample Messages (Your Voice)
+          </CardTitle>
+          <CardDescription>
+            Paste 2-3 real messages you&apos;ve sent before. The AI will learn your writing style from these.
+            This is the #1 way to make generated messages sound like you.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {profile.sample_messages.map((msg, index) => (
+            <div key={index} className="relative bg-muted p-3 pr-10 rounded-lg text-sm">
+              <button
+                onClick={() => removeSampleMessage(index)}
+                className="absolute top-2 right-2 p-1 hover:bg-background rounded"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              &quot;{msg}&quot;
+            </div>
+          ))}
+          <div className="space-y-2">
+            <Textarea
+              placeholder="Paste a real message you've sent to someone... (e.g., 'Hey Sarah! Saw your post about the product launch - congrats! Would love to hear how it went when you have time.')"
+              value={newSampleMessage}
+              onChange={(e) => setNewSampleMessage(e.target.value)}
+              rows={3}
+            />
+            <Button onClick={addSampleMessage} variant="outline" size="sm">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Sample
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Writing Preferences */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Writing Preferences</CardTitle>
+          <CardDescription>
+            Fine-tune how messages are written
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Preferred Openers */}
+          <div className="space-y-2">
+            <Label>Preferred Opening Styles</Label>
+            <p className="text-xs text-muted-foreground mb-2">
+              How do you like to start messages? Add examples.
+            </p>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {profile.preferred_openers.map((opener, index) => (
+                <Badge key={index} variant="secondary" className="gap-1">
+                  {opener}
+                  <button onClick={() => removeOpener(index)}>
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Input
+                placeholder="e.g., 'Hey [name]!', 'Quick question -', 'Thought of you when...'"
+                value={newOpener}
+                onChange={(e) => setNewOpener(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addOpener()}
+              />
+              <Button onClick={addOpener} variant="outline" size="sm">
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          {/* Phrases to Avoid */}
+          <div className="space-y-2">
+            <Label>Phrases to Avoid</Label>
+            <p className="text-xs text-muted-foreground mb-2">
+              Words or phrases you never want in your messages
+            </p>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {profile.avoid_phrases.map((phrase, index) => (
+                <Badge key={index} variant="destructive" className="gap-1">
+                  {phrase}
+                  <button onClick={() => removeAvoidPhrase(index)}>
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Input
+                placeholder="e.g., 'Hope this finds you well', 'Just circling back', 'synergy'"
+                value={newAvoidPhrase}
+                onChange={(e) => setNewAvoidPhrase(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addAvoidPhrase()}
+              />
+              <Button onClick={addAvoidPhrase} variant="outline" size="sm">
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* API Keys */}
       <Card>
@@ -125,6 +380,30 @@ export default function SettingsPage() {
                 className="underline"
               >
                 proxycurl.com
+              </a>
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="twitter">Twitter Bearer Token</Label>
+            <Input
+              id="twitter"
+              type="password"
+              placeholder="Your Twitter API bearer token"
+              value={settings.twitter_bearer_token || ""}
+              onChange={(e) =>
+                setSettings({ ...settings, twitter_bearer_token: e.target.value })
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              Used for Twitter/X monitoring. Get yours at{" "}
+              <a
+                href="https://developer.twitter.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                developer.twitter.com
               </a>
             </p>
           </div>
@@ -294,6 +573,9 @@ NEWSAPI_KEY=your-newsapi-key
 
 # Optional: LinkedIn profile monitoring
 PROXYCURL_API_KEY=your-proxycurl-key
+
+# Optional: Twitter/X monitoring
+TWITTER_BEARER_TOKEN=your-twitter-bearer-token
 
 # Required for database (Supabase)
 NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co

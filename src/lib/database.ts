@@ -437,6 +437,7 @@ const DEFAULT_SETTINGS: Settings = {
   high_priority_frequency_days: 30,
   medium_priority_frequency_days: 60,
   low_priority_frequency_days: 120,
+  user_profile: null,
   updated_at: new Date().toISOString(),
 }
 
