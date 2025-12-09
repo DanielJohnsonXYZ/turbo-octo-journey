@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import Anthropic from "@anthropic-ai/sdk"
-import { Contact, ResearchItem, Interaction, UserProfile } from "@/lib/types"
+import {
+  Contact,
+  ResearchItem,
+  Interaction,
+  UserProfile,
+  RelationshipType,
+  RELATIONSHIP_TYPE_META,
+} from "@/lib/types"
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -19,31 +26,27 @@ type MessagePurpose =
   | "check_in" // Just staying in touch
   | "custom" // Custom goal
 
-// Tone options
-type MessageTone = "casual" | "warm" | "professional" | "enthusiastic" | "thoughtful"
-
 interface GenerateMessageRequest {
   contact: Contact
   research_items: ResearchItem[]
   recent_interactions: Interaction[]
   user_profile: UserProfile | null
   purpose: MessagePurpose
-  tone?: MessageTone
   custom_goal?: string
   channel: "email" | "linkedin" | "text" | "twitter"
   key_points?: string[] // Specific things user wants to mention
 }
 
-function formatResearchContext(items: ResearchItem[]): string {
-  if (!items.length) return "No recent news or updates found about this person."
+function formatResearchForQuestions(items: ResearchItem[]): string {
+  if (!items.length) return ""
 
-  // Prioritize unread and high-importance items
+  // Get unread and high-importance items first
   const sorted = [...items]
     .sort((a, b) => {
       if (a.is_read !== b.is_read) return a.is_read ? 1 : -1
       return (b.importance_score || 0) - (a.importance_score || 0)
     })
-    .slice(0, 6)
+    .slice(0, 5)
 
   return sorted
     .map((r) => {
@@ -51,11 +54,11 @@ function formatResearchContext(items: ResearchItem[]): string {
         (Date.now() - new Date(r.fetched_at).getTime()) / (1000 * 60 * 60 * 24)
       )
       const ageStr = age === 0 ? "today" : age === 1 ? "yesterday" : `${age} days ago`
-      return `• [${r.source.toUpperCase()}] "${r.title}" (${ageStr})
-  ${r.summary || "No summary available"}
-  ${r.url ? `Source: ${r.url}` : ""}`
+      return `**${r.title}** (${r.source}, ${ageStr})
+${r.summary || r.raw_content?.slice(0, 500) || "No details"}
+${r.url ? `URL: ${r.url}` : ""}`
     })
-    .join("\n\n")
+    .join("\n\n---\n\n")
 }
 
 function formatInteractionHistory(interactions: Interaction[]): string {
@@ -69,10 +72,9 @@ function formatInteractionHistory(interactions: Interaction[]): string {
         day: "numeric",
         year: "numeric",
       })
-      const sentiment = i.sentiment ? ` [${i.sentiment}]` : ""
-      return `• ${date} - ${i.type.replace(/_/g, " ")} via ${i.channel}${sentiment}
+      return `• ${date} - ${i.type.replace(/_/g, " ")} via ${i.channel}
   ${i.subject ? `Subject: "${i.subject}"` : ""}
-  ${i.content ? `Content: "${i.content.slice(0, 300)}${i.content.length > 300 ? "..." : ""}"` : ""}
+  ${i.content ? `What was discussed: "${i.content.slice(0, 400)}${i.content.length > 400 ? "..." : ""}"` : ""}
   ${i.outcome ? `Outcome: ${i.outcome}` : ""}`
     })
     .join("\n\n")
@@ -80,23 +82,23 @@ function formatInteractionHistory(interactions: Interaction[]): string {
 
 function formatUserProfile(profile: UserProfile | null): string {
   if (!profile) {
-    return `No user profile configured. Write in a friendly, professional tone.`
+    return `No user profile. Write in a friendly, professional tone without emojis.`
   }
 
-  let result = `**About the sender:**
+  let result = `**About you (the sender):**
 - Name: ${profile.name}
 ${profile.role ? `- Role: ${profile.role}` : ""}
-${profile.communication_style ? `- Their communication style: ${profile.communication_style}` : ""}
+${profile.communication_style ? `- Your communication style: ${profile.communication_style}` : ""}
 ${profile.about ? `- Background: ${profile.about}` : ""}
-${profile.signature ? `- Signature: "${profile.signature}"` : ""}`
+${profile.signature ? `- Sign-off: "${profile.signature}"` : ""}`
 
   if (profile.sample_messages?.length) {
-    result += `\n\n**Examples of how they write (MATCH THIS STYLE):**\n`
-    result += profile.sample_messages.map((m) => `"${m}"`).join("\n\n")
+    result += `\n\n**Examples of how you actually write (MATCH THIS STYLE EXACTLY):**\n`
+    result += profile.sample_messages.map((m, i) => `${i + 1}. "${m}"`).join("\n\n")
   }
 
   if (profile.preferred_openers?.length) {
-    result += `\n\n**Opening styles they like:** ${profile.preferred_openers.join(", ")}`
+    result += `\n\n**Opening styles you use:** ${profile.preferred_openers.join(", ")}`
   }
 
   if (profile.avoid_phrases?.length) {
@@ -106,63 +108,54 @@ ${profile.signature ? `- Signature: "${profile.signature}"` : ""}`
   return result
 }
 
+function getRelationshipGuidance(type: RelationshipType | null): string {
+  if (!type || !RELATIONSHIP_TYPE_META[type]) {
+    return `No specific relationship type set. Use a friendly professional tone.`
+  }
+
+  const meta = RELATIONSHIP_TYPE_META[type]
+  return `**Relationship type:** ${meta.label}
+**Tone guidance:** ${meta.tone}
+**Approach:** ${meta.approach}
+**Good topics for this relationship:** ${meta.topics.join(", ")}`
+}
+
+function getTimeGapGuidance(daysSinceContact: number | null): string {
+  if (daysSinceContact === null) {
+    return `**First time reaching out** - Introduce yourself briefly, reference how you know them or why you're reaching out.`
+  }
+
+  if (daysSinceContact <= 14) {
+    return `**Recent contact (${daysSinceContact} days ago)** - No need to acknowledge the gap. Jump right into the reason for reaching out.`
+  }
+
+  if (daysSinceContact <= 30) {
+    return `**About a month since last contact** - Brief acknowledgment OK but not required. Keep it casual.`
+  }
+
+  if (daysSinceContact <= 90) {
+    return `**A few months since last contact (${daysSinceContact} days)** - Light acknowledgment of time passing can feel natural, like "Been a while!" but don't over-apologize.`
+  }
+
+  if (daysSinceContact <= 180) {
+    return `**6+ months since last contact (${daysSinceContact} days)** - Acknowledge the gap naturally. Something like "I know it's been a while" works. Provide brief context for reaching out now.`
+  }
+
+  return `**Long time since contact (${daysSinceContact} days / ${Math.floor(daysSinceContact / 30)} months)** - Definitely acknowledge the gap. Be genuine about it. Reference something specific you remember about them to show you haven't forgotten.`
+}
+
 function getPurposeGuidance(purpose: MessagePurpose, customGoal?: string): string {
   const guidance: Record<MessagePurpose, string> = {
-    reconnect: `This is a reconnection message after not being in touch for a while. Focus on:
-- Acknowledge the time gap naturally (don't over-apologize)
-- Reference something specific you remember about them or shared together
-- Show genuine interest in what they've been up to
-- Keep it light and open-ended`,
-
-    congratulate: `This is a congratulatory message. Focus on:
-- Be specific about what you're congratulating them on
-- Show genuine enthusiasm without being over the top
-- Reference why this achievement matters based on what you know about them
-- Keep it brief - don't make it about you`,
-
-    share_resource: `You're sharing something helpful with them. Focus on:
-- Briefly explain why you thought of them specifically
-- Don't over-explain the resource - let them discover it
-- Make it easy to ignore if not relevant
-- Frame it as "thought you might find this interesting" not "you need to see this"`,
-
-    ask_advice: `You're asking for their input or advice. Focus on:
-- Be specific about what you need help with
-- Explain briefly why you're asking them specifically
-- Make it easy to say no or defer
-- Show you value their time`,
-
-    offer_help: `You're offering to help them with something. Focus on:
-- Be specific about how you could help
-- Reference why you're in a position to help
-- Make it feel like a genuine offer, not a transaction
-- No strings attached tone`,
-
-    follow_up: `This is a follow-up to a previous conversation or request. Focus on:
-- Reference the specific previous discussion
-- Add new value if possible
-- Make it easy for them to respond
-- Be patient in tone`,
-
-    introduce: `You're making or facilitating an introduction. Focus on:
-- Be clear about why these people should connect
-- Give enough context for both parties
-- Make the ask specific
-- Follow up appropriately`,
-
-    thank: `This is a thank you message. Focus on:
-- Be specific about what you're thanking them for
-- Explain the impact their help had
-- Keep it genuine and not transactional
-- Brief is better`,
-
-    check_in: `This is a casual check-in to stay in touch. Focus on:
-- Keep it light and natural
-- Reference something relevant to them
-- Ask about something specific, not just "how are you"
-- Make it easy to respond`,
-
-    custom: customGoal || "Achieve the user's specific goal while being genuine and natural.",
+    reconnect: `Reconnecting after time apart. Reference something specific about them or your history together.`,
+    congratulate: `Congratulating on something specific. Be genuine, not generic. Ask a thoughtful follow-up question.`,
+    share_resource: `Sharing something useful. Explain briefly why you thought of them specifically.`,
+    ask_advice: `Asking for their input. Be specific about what you need. Show you value their time.`,
+    offer_help: `Offering to help with something. Be specific and genuine. No strings attached.`,
+    follow_up: `Following up on a previous conversation. Reference the specific discussion.`,
+    introduce: `Making or facilitating an introduction. Be clear about why.`,
+    thank: `Expressing genuine gratitude. Be specific about what they did and its impact.`,
+    check_in: `Casual check-in to stay in touch. Reference something relevant to them.`,
+    custom: customGoal || "Achieve the specific goal while being genuine.",
   }
 
   return guidance[purpose]
@@ -170,31 +163,11 @@ function getPurposeGuidance(purpose: MessagePurpose, customGoal?: string): strin
 
 function getChannelGuidance(channel: string): string {
   const guidance: Record<string, string> = {
-    email: `**Email format:**
-- Include a subject line (clear but not clickbaity)
-- Can be 2-4 paragraphs
-- Professional but personal
-- Include appropriate sign-off`,
-
-    linkedin: `**LinkedIn message format:**
-- Keep it shorter (1-2 paragraphs max)
-- More casual than email
-- No subject line needed
-- Don't start with "I hope this finds you well"`,
-
-    text: `**Text message format:**
-- Very brief (2-3 sentences)
-- Casual and direct
-- No formalities
-- Emojis OK if appropriate`,
-
-    twitter: `**Twitter DM format:**
-- Very brief
-- Casual tone
-- Direct to the point
-- No formal sign-off`,
+    email: `**Email:** 2-3 short paragraphs. Include subject line. Can be more detailed.`,
+    linkedin: `**LinkedIn:** 1-2 paragraphs max. More casual than email. No subject line.`,
+    text: `**Text:** 2-4 sentences. Very casual. Direct.`,
+    twitter: `**Twitter DM:** Brief. Casual. Get to the point.`,
   }
-
   return guidance[channel] || guidance.email
 }
 
@@ -207,7 +180,6 @@ export async function POST(request: NextRequest) {
       recent_interactions,
       user_profile,
       purpose,
-      tone = "warm",
       custom_goal,
       channel,
       key_points,
@@ -219,33 +191,37 @@ export async function POST(request: NextRequest) {
         )
       : null
 
-    const systemPrompt = `You are an expert at writing natural, genuine messages that strengthen relationships. Your goal is to help maintain authentic connections, not to sound like a robot or a salesperson.
+    const hasRecentNews = research_items.some(
+      (r) => !r.is_read || (r.importance_score && r.importance_score >= 6)
+    )
 
-**Core principles:**
-1. Sound like a real human who actually knows this person
-2. Reference SPECIFIC details - never be vague
-3. Match the sender's writing style exactly if samples are provided
+    const systemPrompt = `You are helping someone maintain genuine relationships. Your job is to write messages that sound like THEM, not like an AI.
+
+**Core rules:**
+1. NO EMOJIS ever
+2. Sound like a real person who actually knows this contact
+3. Reference SPECIFIC details - vague is death
 4. Keep it concise - respect their time
-5. Never sound transactional or networking-y
-6. Avoid clichés like "hope you're well" or "hope this finds you"
-7. Don't be sycophantic or over-compliment
-8. If there's nothing specific to reference, it's OK to be brief
+5. Never sound like networking or sales
+6. Never use clichés like "Hope this finds you well", "Just circling back", "Hope you're crushing it"
+7. If there's news about them, ask a genuinely INTERESTING question about it - not generic
 
-**What makes a message feel genuine:**
-- Specific references to shared experiences or their work
-- Natural language (contractions, casual phrasing)
-- Appropriate length for the relationship
-- Shows you actually pay attention to them
-- Asks questions you genuinely want answers to
+**What makes a question interesting vs generic:**
+- Generic: "Congrats on the funding! How does it feel?"
+- Interesting: "Congrats on the Series A! Curious how you're thinking about the build vs buy decision for [specific thing mentioned in news]?"
 
-**What makes a message feel fake:**
-- Generic statements that could apply to anyone
-- Over-the-top enthusiasm
-- Forced name usage
-- Obvious "networking" language
-- Too many compliments`
+- Generic: "Saw you launched the new feature. How's it going?"
+- Interesting: "Saw the launch! The [specific detail] is clever. Did you consider [alternative approach] or was there a reason to go this direction?"
 
-    const userPrompt = `Generate a ${tone} ${channel} message for the following situation:
+**The goal is to ask questions that:**
+- Show you actually read/understood what happened
+- Touch on non-obvious implications
+- Are things you'd genuinely want to know the answer to
+- Demonstrate relevant knowledge/insight
+
+If there's no recent news, it's OK to just check in warmly without forcing a hook.`
+
+    const userPrompt = `Generate a message for the following situation:
 
 ---
 
@@ -258,25 +234,24 @@ ${formatUserProfile(user_profile)}
 ${contact.company ? `- Company: ${contact.company}` : ""}
 ${contact.job_title ? `- Role: ${contact.job_title}` : ""}
 ${contact.location ? `- Location: ${contact.location}` : ""}
-- Relationship: ${contact.is_friend ? "Friend" : "Professional contact"}${contact.is_professional ? " (Professional)" : ""}
-${contact.communication_style ? `- Their preferred communication style: ${contact.communication_style}` : ""}
-${contact.how_we_met ? `- How we met: ${contact.how_we_met}` : ""}
-${contact.associations?.length ? `- Associations/Groups: ${contact.associations.join(", ")}` : ""}
-${contact.relationship_value?.length ? `- What they bring to the relationship: ${contact.relationship_value.join(", ")}` : ""}
-${contact.notes ? `- Personal notes: ${contact.notes}` : ""}
-${contact.last_update_notes ? `- Recent update about them: ${contact.last_update_notes}` : ""}
-${contact.next_steps ? `- Planned next steps: ${contact.next_steps}` : ""}
+${contact.how_we_met ? `- How you met: ${contact.how_we_met}` : ""}
+${contact.associations?.length ? `- Context/Groups: ${contact.associations.join(", ")}` : ""}
+${contact.notes ? `- Your notes about them: ${contact.notes}` : ""}
+${contact.last_update_notes ? `- Recent update you noted: ${contact.last_update_notes}` : ""}
+${contact.next_steps ? `- You had planned: ${contact.next_steps}` : ""}
 
-**Time since last contact:** ${daysSinceContact !== null ? `${daysSinceContact} days` : "Never contacted before"}
+${getRelationshipGuidance(contact.relationship_type)}
+
+${getTimeGapGuidance(daysSinceContact)}
 
 ---
 
 **Recent news/updates about them:**
-${formatResearchContext(research_items)}
+${hasRecentNews ? formatResearchForQuestions(research_items) : "No recent news found. A simple check-in without a specific hook is fine."}
 
 ---
 
-**Our interaction history:**
+**Your interaction history with them:**
 ${formatInteractionHistory(recent_interactions)}
 
 ---
@@ -290,19 +265,20 @@ ${key_points?.length ? `**Specific points to include:**\n${key_points.map((p) =>
 
 ---
 
-Now generate the message. Remember:
-- Sound like a real person, not a template
-- Use specific details from the research and history
-- Match the sender's style if samples were provided
+Write the message now. Remember:
+- Match the sender's writing style from their samples
+- NO emojis
+- If there's news, ask an interesting, specific question about it
+- If no news, a warm check-in is fine
 - Keep it appropriate length for ${channel}
 
-Return your response as JSON:
+Return as JSON:
 {
-  "subject": "Email subject line (only for email, null otherwise)",
-  "message": "The complete message text",
-  "talking_points": ["3-4 conversation topics if this leads to a call/meeting"],
-  "why_now": "Brief explanation of why this is a good time to reach out",
-  "personalization_used": ["List of specific details you incorporated from research/history"]
+  "subject": "Email subject line (null if not email)",
+  "message": "The complete message",
+  "interesting_questions": ["2-3 specific questions you could ask based on the research/context"],
+  "talking_points": ["3-4 topics if this becomes a conversation"],
+  "why_this_works": "Brief explanation of why this message should resonate"
 }`
 
     const response = await anthropic.messages.create({
@@ -335,15 +311,16 @@ Return your response as JSON:
       data: {
         subject: result.subject,
         message: result.message,
+        interesting_questions: result.interesting_questions,
         talking_points: result.talking_points,
-        why_now: result.why_now,
-        personalization_used: result.personalization_used,
+        why_this_works: result.why_this_works,
         context: {
           days_since_contact: daysSinceContact,
+          relationship_type: contact.relationship_type,
           research_count: research_items.length,
+          has_recent_news: hasRecentNews,
           interaction_count: recent_interactions.length,
           purpose,
-          tone,
           channel,
         },
       },

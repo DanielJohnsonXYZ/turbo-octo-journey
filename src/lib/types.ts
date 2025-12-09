@@ -1,3 +1,18 @@
+// Relationship types determine tone and approach
+export type RelationshipType =
+  | "investor" // VCs, angels - more polished, respect their time
+  | "founder_peer" // Fellow founders - casual, direct, mutual support
+  | "mentor" // People who've helped you - grateful, updates on progress
+  | "mentee" // People you help - supportive, offering value
+  | "potential_hire" // Recruiting - enthusiastic about them, sell the opportunity
+  | "service_provider" // Lawyers, accountants, etc. - professional, transactional
+  | "industry_expert" // Domain experts - curious, learning-focused
+  | "media" // Journalists, podcasters - helpful, newsworthy
+  | "customer" // Customers/users - supportive, listening
+  | "friend" // Genuine friends - casual, personal
+  | "acquaintance" // Met once or twice - warm but not assuming closeness
+  | "other"
+
 export interface Contact {
   id: string
   name: string
@@ -11,6 +26,7 @@ export interface Contact {
   location: string | null
   status: string | null
   priority: "high" | "medium" | "low" | null
+  relationship_type: RelationshipType | null // How you relate to this person
   associations: string[] // tags like "Google Mentor", "Techstars", etc.
   communication_style: string | null
   how_we_met: string | null
@@ -212,4 +228,98 @@ export const CHANNEL_META: Record<InteractionChannel, { label: string; icon: str
   slack: { label: "Slack", icon: "hash" },
   text: { label: "Text/SMS", icon: "smartphone" },
   other: { label: "Other", icon: "more-horizontal" },
+}
+
+// Relationship type metadata - defines tone and approach for each type
+export const RELATIONSHIP_TYPE_META: Record<RelationshipType, {
+  label: string
+  tone: string
+  approach: string
+  topics: string[]
+  defaultChannel: InteractionChannel
+}> = {
+  investor: {
+    label: "Investor",
+    tone: "Polished and respectful of their time. Confident but not arrogant.",
+    approach: "Lead with substance - updates, insights, or genuine questions. No fluff. They see hundreds of pitches, so be memorable by being genuinely interesting.",
+    topics: ["portfolio company insights", "market trends", "your traction/progress", "strategic questions"],
+    defaultChannel: "email",
+  },
+  founder_peer: {
+    label: "Founder/Peer",
+    tone: "Casual and direct. Fellow traveler energy.",
+    approach: "Be real - share struggles and wins alike. Mutual support vibe. Can be more vulnerable and direct than with others.",
+    topics: ["shared challenges", "resource sharing", "introductions", "real talk about the journey"],
+    defaultChannel: "text",
+  },
+  mentor: {
+    label: "Mentor",
+    tone: "Grateful and update-focused. Show you value their past advice.",
+    approach: "Share progress on things they've helped with. Ask thoughtful questions that show you've done your homework. Don't waste their time with basics.",
+    topics: ["progress updates", "specific challenges", "asking for perspective", "thanking for past help"],
+    defaultChannel: "email",
+  },
+  mentee: {
+    label: "Mentee",
+    tone: "Supportive and encouraging. Generous with your time.",
+    approach: "Check in on their progress. Offer help proactively. Share relevant resources or connections.",
+    topics: ["their progress", "offering resources", "making introductions", "celebrating their wins"],
+    defaultChannel: "linkedin",
+  },
+  potential_hire: {
+    label: "Potential Hire",
+    tone: "Enthusiastic about them specifically. Sell the opportunity authentically.",
+    approach: "Show you've researched them. Connect their skills/interests to what you're building. Be genuine about the opportunity and challenges.",
+    topics: ["their background", "the role/opportunity", "team and culture", "their questions"],
+    defaultChannel: "email",
+  },
+  service_provider: {
+    label: "Service Provider",
+    tone: "Professional and efficient. Friendly but transactional.",
+    approach: "Be clear about needs. Respect their expertise. Keep relationship warm but purposeful.",
+    topics: ["project updates", "new needs", "referrals", "maintaining relationship"],
+    defaultChannel: "email",
+  },
+  industry_expert: {
+    label: "Industry Expert",
+    tone: "Curious and learning-focused. Show intellectual engagement.",
+    approach: "Ask genuinely interesting questions. Share your own insights to make it a two-way conversation. Reference their work specifically.",
+    topics: ["their expertise area", "industry trends", "your learning questions", "sharing relevant findings"],
+    defaultChannel: "linkedin",
+  },
+  media: {
+    label: "Media/Press",
+    tone: "Helpful and newsworthy. Make their job easier.",
+    approach: "Lead with what's interesting for their audience. Be quotable. Offer exclusive angles or data.",
+    topics: ["story ideas", "industry insights", "company news", "expert commentary"],
+    defaultChannel: "email",
+  },
+  customer: {
+    label: "Customer",
+    tone: "Supportive and listening-focused. Genuinely care about their success.",
+    approach: "Check in on how things are going. Listen for feedback. Offer help proactively.",
+    topics: ["their experience", "new features", "their feedback", "success stories"],
+    defaultChannel: "email",
+  },
+  friend: {
+    label: "Friend",
+    tone: "Casual and personal. Real friendship energy.",
+    approach: "Be yourself. Talk about life, not just work. Remember personal details.",
+    topics: ["life updates", "personal interests", "shared experiences", "just catching up"],
+    defaultChannel: "text",
+  },
+  acquaintance: {
+    label: "Acquaintance",
+    tone: "Warm but not assuming closeness. Friendly professional.",
+    approach: "Reference how you met. Don't assume they remember you well. Provide context.",
+    topics: ["relevant shared context", "specific reason for reaching out", "offering value"],
+    defaultChannel: "linkedin",
+  },
+  other: {
+    label: "Other",
+    tone: "Friendly and professional. Adapt based on context.",
+    approach: "Be genuine and clear about why you're reaching out.",
+    topics: ["reason for outreach", "mutual value"],
+    defaultChannel: "email",
+  },
 }

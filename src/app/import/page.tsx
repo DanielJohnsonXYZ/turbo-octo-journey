@@ -98,6 +98,7 @@ function transformNotionContact(row: NotionContactImport): Omit<Contact, "id" | 
     location: row.Location || null,
     status: row.Status || null,
     priority: parsePriority(row.Priority),
+    relationship_type: null,
     associations: parseAssociations(row.Associations),
     communication_style: row["Communication Style"] || null,
     how_we_met: row["How we met"] || null,
