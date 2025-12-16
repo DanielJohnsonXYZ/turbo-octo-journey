@@ -186,7 +186,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Active Contacts</CardTitle>
@@ -264,73 +264,47 @@ export default function Dashboard() {
               </Link>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {displayContacts.map((contact) => (
-                <div
+                <Link
                   key={contact.id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors"
+                  href={`/contacts/${contact.id}`}
+                  className="block p-4 border rounded-lg hover:bg-accent/50 transition-colors"
                 >
-                  <div className="flex items-center gap-4">
-                    <Avatar>
+                  <div className="flex items-start gap-3">
+                    <Avatar className="h-10 w-10 shrink-0">
                       <AvatarFallback>{getInitials(contact.name)}</AvatarFallback>
                     </Avatar>
-                    <div>
-                      <Link href={`/contacts/${contact.id}`} className="font-medium hover:underline">
-                        {contact.name}
-                      </Link>
-                      <div className="flex items-center gap-2 mt-1">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium truncate">{contact.name}</span>
+                        {contact.priorityInfo && (
+                          <span className="text-sm font-medium shrink-0">
+                            {contact.priorityInfo.score}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 mt-1">
                         {contact.priority && (
                           <Badge variant="outline" className={getPriorityColor(contact.priority)}>
                             {contact.priority}
                           </Badge>
                         )}
-                        {contact.is_friend && (
-                          <Badge variant="secondary">Friend</Badge>
-                        )}
                         <span className="text-sm text-muted-foreground flex items-center gap-1">
                           <Clock className="h-3 w-3" />
                           {contact.daysSinceContact !== null
-                            ? `${contact.daysSinceContact} days ago`
-                            : "Never contacted"}
+                            ? `${contact.daysSinceContact}d`
+                            : "Never"}
                         </span>
                       </div>
                       {contact.priorityInfo && (
-                        <p className="text-sm text-muted-foreground mt-1">
+                        <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
                           {contact.priorityInfo.reason}
                         </p>
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {contact.priorityInfo && (
-                      <div className="text-right mr-4">
-                        <div className="text-sm font-medium">
-                          Score: {contact.priorityInfo.score}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {contact.priorityInfo.suggested_action}
-                        </div>
-                      </div>
-                    )}
-                    <Link href={`/contacts/${contact.id}`}>
-                      <Button variant="outline" size="sm">
-                        <MessageSquare className="h-4 w-4 mr-1" />
-                        Message
-                      </Button>
-                    </Link>
-                    {contact.linkedin_url && (
-                      <a
-                        href={contact.linkedin_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <Button variant="ghost" size="sm">
-                          <ExternalLink className="h-4 w-4" />
-                        </Button>
-                      </a>
-                    )}
-                  </div>
-                </div>
+                </Link>
               ))}
             </div>
           )}
