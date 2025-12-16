@@ -30,17 +30,27 @@ export interface Contact {
   associations: string[] // tags like "Google Mentor", "Techstars", etc.
   communication_style: string | null
   how_we_met: string | null
+  introduced_by: string | null // Who introduced you
   relationship_value: string[] // what value they provide
   is_professional: boolean
   is_friend: boolean
   is_archived: boolean
   dont_need_to_contact: boolean
+  // Important dates
+  birthday: string | null // MM-DD format
+  work_anniversary: string | null // Date they started current role
+  // Meeting data
+  last_meeting_date: string | null
+  total_meetings: number | null
+  // Contact tracking
   last_contacted_at: string | null
   next_contact_at: string | null // AI-calculated
   notes: string | null
   next_steps: string | null
   last_update_notes: string | null // "Last Update?" field from Notion
   contact_score: number | null // AI-calculated priority score 0-100
+  // Mutual connections (stored as JSON array of names)
+  mutual_connections: string[]
   created_at: string
   updated_at: string
 }
@@ -48,7 +58,7 @@ export interface Contact {
 export interface ResearchItem {
   id: string
   contact_id: string
-  source: "linkedin" | "news" | "twitter" | "web" | "rss" | "manual" | "company"
+  source: "linkedin" | "linkedin_post" | "news" | "twitter" | "web" | "rss" | "manual" | "company" | "calendar"
   source_name: string | null // e.g., "TechCrunch", "LinkedIn", "@username"
   title: string
   summary: string | null

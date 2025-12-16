@@ -102,17 +102,23 @@ function transformNotionContact(row: NotionContactImport): Omit<Contact, "id" | 
     associations: parseAssociations(row.Associations),
     communication_style: row["Communication Style"] || null,
     how_we_met: row["How we met"] || null,
+    introduced_by: null,
     relationship_value: parseAssociations(row.Value),
     is_professional: parseBool(row["Professional Contact"]),
     is_friend: parseBool(row.Friend),
     is_archived: parseBool(row.Archive),
     dont_need_to_contact: parseBool(row["Don't Need To Contact"]),
+    birthday: null,
+    work_anniversary: null,
+    last_meeting_date: null,
+    total_meetings: null,
     last_contacted_at: parseDate(row["Last Contacted"]),
     next_contact_at: null,
     notes: null,
     next_steps: row["Next Steps"] || null,
     last_update_notes: row["Last Update?"] || null,
     contact_score: null,
+    mutual_connections: [],
   }
 }
 
