@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Save, Key, Clock, Trash2, AlertCircle, User, MessageSquare, Plus, X } from "lucide-react"
+import { useSearchParams } from "next/navigation"
+import { Save, Key, Clock, Trash2, AlertCircle, User, MessageSquare, Plus, X, Calendar, CheckCircle2, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -24,16 +25,49 @@ const DEFAULT_USER_PROFILE: UserProfile = {
 }
 
 export default function SettingsPage() {
+  const searchParams = useSearchParams()
   const [settings, setSettings] = useState<Settings | null>(null)
   const [saved, setSaved] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [newSampleMessage, setNewSampleMessage] = useState("")
   const [newAvoidPhrase, setNewAvoidPhrase] = useState("")
   const [newOpener, setNewOpener] = useState("")
+  const [googleStatus, setGoogleStatus] = useState<"unknown" | "connected" | "error" | "not_connected">("unknown")
+  const [googleError, setGoogleError] = useState<string | null>(null)
 
   useEffect(() => {
     setSettings(getSettings())
-  }, [])
+
+    // Check for OAuth callback results
+    const connected = searchParams.get("google_connected")
+    const error = searchParams.get("google_error")
+
+    if (connected === "true") {
+      setGoogleStatus("connected")
+      // Clear URL params
+      window.history.replaceState({}, "", "/settings")
+    } else if (error) {
+      setGoogleStatus("error")
+      setGoogleError(decodeURIComponent(error))
+      window.history.replaceState({}, "", "/settings")
+    }
+
+    // Check connection status from API
+    fetch("/api/auth/google/status")
+      .then(res => res.json())
+      .then(data => {
+        if (data.connected) {
+          setGoogleStatus("connected")
+        } else if (googleStatus === "unknown") {
+          setGoogleStatus("not_connected")
+        }
+      })
+      .catch(() => {
+        if (googleStatus === "unknown") {
+          setGoogleStatus("not_connected")
+        }
+      })
+  }, [searchParams])
 
   const handleSave = () => {
     if (!settings) return
@@ -410,6 +444,64 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
+      {/* Google Calendar Integration */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Calendar className="h-5 w-5" />
+            Google Calendar
+          </CardTitle>
+          <CardDescription>
+            Connect your Google Calendar to see meeting history with contacts and upcoming meetings.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {googleStatus === "connected" ? (
+            <div className="flex items-center gap-2 text-green-600">
+              <CheckCircle2 className="h-5 w-5" />
+              <span>Google Calendar connected</span>
+            </div>
+          ) : googleStatus === "error" ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-destructive">
+                <XCircle className="h-5 w-5" />
+                <span>Connection failed: {googleError || "Unknown error"}</span>
+              </div>
+              <Button asChild>
+                <a href="/api/auth/google">Try Again</a>
+              </Button>
+            </div>
+          ) : googleStatus === "not_connected" ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Connect your calendar to automatically track meetings with your contacts.
+                We only request read-only access.
+              </p>
+              <Button asChild>
+                <a href="/api/auth/google">
+                  <Calendar className="mr-2 h-4 w-4" />
+                  Connect Google Calendar
+                </a>
+              </Button>
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">Checking connection status...</div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.
+            Set up OAuth in{" "}
+            <a
+              href="https://console.cloud.google.com/apis/credentials"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+            >
+              Google Cloud Console
+            </a>
+          </p>
+        </CardContent>
+      </Card>
+
       {/* Contact Frequency */}
       <Card>
         <CardHeader>
@@ -580,7 +672,13 @@ TWITTER_BEARER_TOKEN=your-twitter-bearer-token
 # Required for database (Supabase)
 NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
-SUPABASE_SERVICE_ROLE_KEY=eyJ...`}
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
+
+# Google Calendar OAuth
+GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-xxx
+GOOGLE_REDIRECT_URI=https://your-app.vercel.app/api/auth/google/callback
+NEXT_PUBLIC_APP_URL=https://your-app.vercel.app`}
           </pre>
         </CardContent>
       </Card>
