@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { Save, Key, Clock, Trash2, AlertCircle, User, MessageSquare, Plus, X, Calendar, CheckCircle2, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -24,7 +24,7 @@ const DEFAULT_USER_PROFILE: UserProfile = {
   preferred_openers: [],
 }
 
-export default function SettingsPage() {
+function SettingsContent() {
   const searchParams = useSearchParams()
   const [settings, setSettings] = useState<Settings | null>(null)
   const [saved, setSaved] = useState(false)
@@ -683,5 +683,13 @@ NEXT_PUBLIC_APP_URL=https://your-app.vercel.app`}
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="max-w-2xl mx-auto">Loading settings...</div>}>
+      <SettingsContent />
+    </Suspense>
   )
 }
